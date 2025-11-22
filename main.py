@@ -70,7 +70,7 @@ async def edge(image: UploadFile = File(...)):
         data_url = f"data:image/png;base64,{base64_png}"
 
         # Kleine künstliche Verzögerung für konsistentes UX
-        time.sleep(1)
+        time.sleep(0.1)
 
         return JSONResponse({"result_data_url": data_url})
 
