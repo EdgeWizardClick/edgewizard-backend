@@ -4,7 +4,7 @@ from fastapi.responses import JSONResponse
 from edgewizard_pipeline import run_edge_pipeline
 
 import io
-from PIL import Image
+from PIL import Image, ImageOps
 import base64
 import time
 
@@ -49,7 +49,12 @@ async def edge(image: UploadFile = File(...)):
     try:
         # read file into memory
         file_bytes = await image.read()
-        pil_input = Image.open(io.BytesIO(file_bytes)).convert("RGB")
+        img = Image.open(io.BytesIO(file_bytes))
+
+        # EXIF-Orientation korrekt anwenden (verhindert "verdrehte" Bilder)
+        img = ImageOps.exif_transpose(img)
+
+        pil_input = img.convert("RGB")
 
         # run EdgeWizard pipeline
         pil_output = run_edge_pipeline(pil_input)
