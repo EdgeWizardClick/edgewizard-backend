@@ -8,6 +8,9 @@ from PIL import Image
 import base64
 import time
 
+import pillow_heif
+pillow_heif.register_heif_opener()
+
 app = FastAPI()
 
 # --------------------------------------------------------
@@ -26,9 +29,22 @@ app.add_middleware(
 # --------------------------------------------------------
 @app.post("/edge")
 async def edge(image: UploadFile = File(...)):
-    # basic file type check
-    if image.content_type not in ["image/png", "image/jpeg", "image/jpg", "image/webp"]:
-        raise HTTPException(status_code=400, detail="Unsupported file type")
+    # file type check (extended for camera formats)
+    allowed_types = [
+        "image/png",
+        "image/jpeg",
+        "image/jpg",
+        "image/webp",
+        "image/heic",
+        "image/heif",
+        "image/heic-sequence",
+    ]
+
+    if image.content_type not in allowed_types:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type: {image.content_type}",
+        )
 
     try:
         # read file into memory
@@ -52,7 +68,11 @@ async def edge(image: UploadFile = File(...)):
 
         return JSONResponse({"result_data_url": data_url})
 
+    except HTTPException:
+        # passthrough of explicit HTTP errors
+        raise
     except Exception as e:
+        # generic error for frontend
         raise HTTPException(status_code=500, detail=f"Processing failed: {e}")
 
 

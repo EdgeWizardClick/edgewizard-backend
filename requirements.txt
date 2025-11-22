@@ -1,6 +1,7 @@
-fastapi
+﻿fastapi
 uvicorn[standard]
 python-multipart
 pillow
 numpy
 scikit-image
+pillow-heif
