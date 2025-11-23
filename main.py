@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+ï»¿from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from edgewizard_pipeline import run_edge_pipeline
@@ -17,11 +17,11 @@ app = FastAPI()
 app.include_router(billing_router)
 
 # --------------------------------------------------------
-# CORS (offen für MVP – später auf Domain einschränken)
+# CORS (offen fÃ¼r MVP â€“ spÃ¤ter auf Domain einschrÃ¤nken)
 # --------------------------------------------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],         # später: ["https://edgewizard.click"]
+    allow_origins=["*"],         # spÃ¤ter: ["https://edgewizard.click"]
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -38,11 +38,11 @@ ALLOWED_TYPES = [
 ]
 
 # --------------------------------------------------------
-# POST /edge – Haupt-API für EdgeWizard
+# POST /edge â€“ Haupt-API fÃ¼r EdgeWizard
 # --------------------------------------------------------
 @app.post("/edge")
 async def edge(image: UploadFile = File(...)):
-    # Dateityp prüfen
+    # Dateityp prÃ¼fen
     if image.content_type not in ALLOWED_TYPES:
         raise HTTPException(
             status_code=400,
@@ -54,13 +54,13 @@ async def edge(image: UploadFile = File(...)):
         file_bytes = await image.read()
         img = Image.open(io.BytesIO(file_bytes))
 
-        # EXIF-Orientation berücksichtigen (dreht Bilder korrekt)
+        # EXIF-Orientation berÃ¼cksichtigen (dreht Bilder korrekt)
         img = ImageOps.exif_transpose(img)
 
-        # Sicherstellen, dass wir ein RGB-Image an die Pipeline übergeben
+        # Sicherstellen, dass wir ein RGB-Image an die Pipeline Ã¼bergeben
         pil_input = img.convert("RGB")
 
-        # EdgeWizard-Pipeline ausführen
+        # EdgeWizard-Pipeline ausfÃ¼hren
         pil_output = run_edge_pipeline(pil_input)
 
         # Ergebnis als PNG in Bytes umwandeln
@@ -72,16 +72,16 @@ async def edge(image: UploadFile = File(...)):
         base64_png = base64.b64encode(out_bytes.read()).decode("utf-8")
         data_url = f"data:image/png;base64,{base64_png}"
 
-        # Kleine künstliche Verzögerung für konsistentes UX
+        # Kleine kÃ¼nstliche VerzÃ¶gerung fÃ¼r konsistentes UX
         time.sleep(0.1)
 
         return JSONResponse({"result_data_url": data_url})
 
     except HTTPException:
-        # Explizite HTTP-Fehler unverändert weitergeben
+        # Explizite HTTP-Fehler unverÃ¤ndert weitergeben
         raise
     except Exception as e:
-        # Generischer Fehler für das Frontend
+        # Generischer Fehler fÃ¼r das Frontend
         raise HTTPException(status_code=500, detail=f"Processing failed: {e}")
 
 
@@ -89,3 +89,4 @@ async def edge(image: UploadFile = File(...)):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000)
+
