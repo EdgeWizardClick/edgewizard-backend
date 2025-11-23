@@ -1,7 +1,8 @@
-ï»¿from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from edgewizard_pipeline import run_edge_pipeline
+from billing import router as billing_router
 
 import io
 from PIL import Image, ImageOps
@@ -13,12 +14,14 @@ register_heif_opener()
 
 app = FastAPI()
 
+app.include_router(billing_router)
+
 # --------------------------------------------------------
-# CORS (offen fÃ¼r MVP â€“ spÃ¤ter auf Domain einschrÃ¤nken)
+# CORS (offen für MVP – später auf Domain einschränken)
 # --------------------------------------------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],         # spÃ¤ter: ["https://edgewizard.click"]
+    allow_origins=["*"],         # später: ["https://edgewizard.click"]
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -35,11 +38,11 @@ ALLOWED_TYPES = [
 ]
 
 # --------------------------------------------------------
-# POST /edge â€“ Haupt-API fÃ¼r EdgeWizard
+# POST /edge – Haupt-API für EdgeWizard
 # --------------------------------------------------------
 @app.post("/edge")
 async def edge(image: UploadFile = File(...)):
-    # Dateityp prÃ¼fen
+    # Dateityp prüfen
     if image.content_type not in ALLOWED_TYPES:
         raise HTTPException(
             status_code=400,
@@ -51,13 +54,13 @@ async def edge(image: UploadFile = File(...)):
         file_bytes = await image.read()
         img = Image.open(io.BytesIO(file_bytes))
 
-        # EXIF-Orientation berÃ¼cksichtigen (dreht Bilder korrekt)
+        # EXIF-Orientation berücksichtigen (dreht Bilder korrekt)
         img = ImageOps.exif_transpose(img)
 
-        # Sicherstellen, dass wir ein RGB-Image an die Pipeline Ã¼bergeben
+        # Sicherstellen, dass wir ein RGB-Image an die Pipeline übergeben
         pil_input = img.convert("RGB")
 
-        # EdgeWizard-Pipeline ausfÃ¼hren
+        # EdgeWizard-Pipeline ausführen
         pil_output = run_edge_pipeline(pil_input)
 
         # Ergebnis als PNG in Bytes umwandeln
@@ -69,16 +72,16 @@ async def edge(image: UploadFile = File(...)):
         base64_png = base64.b64encode(out_bytes.read()).decode("utf-8")
         data_url = f"data:image/png;base64,{base64_png}"
 
-        # Kleine kÃ¼nstliche VerzÃ¶gerung fÃ¼r konsistentes UX
+        # Kleine künstliche Verzögerung für konsistentes UX
         time.sleep(0.1)
 
         return JSONResponse({"result_data_url": data_url})
 
     except HTTPException:
-        # Explizite HTTP-Fehler unverÃ¤ndert weitergeben
+        # Explizite HTTP-Fehler unverändert weitergeben
         raise
     except Exception as e:
-        # Generischer Fehler fÃ¼r das Frontend
+        # Generischer Fehler für das Frontend
         raise HTTPException(status_code=500, detail=f"Processing failed: {e}")
 
 
