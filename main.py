@@ -1,8 +1,10 @@
-﻿from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+
 from edgewizard_pipeline import run_edge_pipeline
 from billing import router as billing_router
+from credits_manager import consume_credit_or_fail, NoCreditsError, get_credit_status
 
 import io
 from PIL import Image, ImageOps
@@ -10,83 +12,95 @@ import base64
 import time
 
 from pillow_heif import register_heif_opener
+
 register_heif_opener()
 
 app = FastAPI()
 
-app.include_router(billing_router)
-
-# --------------------------------------------------------
-# CORS (offen für MVP – später auf Domain einschränken)
-# --------------------------------------------------------
+# CORS configuration (allow app.emergent preview and general web usage)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],         # später: ["https://edgewizard.click"]
+    allow_origins=["*"],  # can be restricted later
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-ALLOWED_TYPES = [
-    "image/png",
-    "image/jpeg",
-    "image/jpg",
-    "image/webp",
-    "image/heic",
-    "image/heif",
-    "image/heic-sequence",
-]
+# Include billing routes (/billing/...)
+app.include_router(billing_router)
 
-# --------------------------------------------------------
-# POST /edge – Haupt-API für EdgeWizard
-# --------------------------------------------------------
+
 @app.post("/edge")
-async def edge(image: UploadFile = File(...)):
-    # Dateityp prüfen
-    if image.content_type not in ALLOWED_TYPES:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unsupported file type: {image.content_type}",
-        )
-
+async def process_edge(
+    image: UploadFile = File(...),
+    client_id: str = Header(..., alias="X-Client-Id"),
+):
+    """
+    Main edge-processing endpoint.
+    Consumes one credit per image (paid first, then free).
+    Returns a PNG outline as Base64 data URL.
+    """
     try:
-        # Datei in den Speicher lesen
+        # First: try to consume a credit for this client
+        try:
+            consume_credit_or_fail(client_id)
+        except NoCreditsError:
+            # No credits available
+            raise HTTPException(
+                status_code=402,
+                detail={
+                    "detail": "NO_CREDITS",
+                    "message": "No credits left. Visit the Shop to continue processing images.",
+                },
+            )
+
+        # Read file content
         file_bytes = await image.read()
-        img = Image.open(io.BytesIO(file_bytes))
 
-        # EXIF-Orientation berücksichtigen (dreht Bilder korrekt)
-        img = ImageOps.exif_transpose(img)
+        # Open as PIL image and fix EXIF orientation
+        pil_image = Image.open(io.BytesIO(file_bytes))
+        pil_image = ImageOps.exif_transpose(pil_image)
 
-        # Sicherstellen, dass wir ein RGB-Image an die Pipeline übergeben
-        pil_input = img.convert("RGB")
+        # Run the high-quality edge pipeline
+        result_image = run_edge_pipeline(pil_image)
 
-        # EdgeWizard-Pipeline ausführen
-        pil_output = run_edge_pipeline(pil_input)
+        # Encode result as PNG Base64 data URL
+        buffer = io.BytesIO()
+        result_image.save(buffer, format="PNG")
+        png_bytes = buffer.getvalue()
+        base64_data = base64.b64encode(png_bytes).decode("ascii")
+        data_url = f"data:image/png;base64,{base64_data}"
 
-        # Ergebnis als PNG in Bytes umwandeln
-        out_bytes = io.BytesIO()
-        pil_output.save(out_bytes, format="PNG")
-        out_bytes.seek(0)
-
-        # Base64 data URL erzeugen
-        base64_png = base64.b64encode(out_bytes.read()).decode("utf-8")
-        data_url = f"data:image/png;base64,{base64_png}"
-
-        # Kleine künstliche Verzögerung für konsistentes UX
+        # Small artificial delay (as before)
         time.sleep(0.1)
 
         return JSONResponse({"result_data_url": data_url})
 
     except HTTPException:
-        # Explizite HTTP-Fehler unverändert weitergeben
+        # Re-raise explicit HTTP errors
         raise
     except Exception as e:
-        # Generischer Fehler für das Frontend
+        # Generic error for frontend
         raise HTTPException(status_code=500, detail=f"Processing failed: {e}")
 
 
-# Lokales Testing: uvicorn main:app --reload
+@app.get("/me/credits")
+async def me_credits(
+    client_id: str = Header(..., alias="X-Client-Id"),
+):
+    """
+    Returns the current credit status for this client:
+    paid_credits, free_credits, total_credits.
+    """
+    try:
+        status = get_credit_status(client_id)
+        return JSONResponse(status)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Could not get credit status: {e}")
+
+
+# Local testing: uvicorn main:app --reload
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000)
 
+    uvicorn.run("main:app", host="0.0.0.0", port=8000)
