@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, Header
+﻿from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -13,6 +13,8 @@ import time
 
 from pillow_heif import register_heif_opener
 
+from auth import router as auth_router, get_current_user
+
 register_heif_opener()
 
 app = FastAPI()
@@ -26,6 +28,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Include auth routes (/auth/...)
+app.include_router(auth_router, prefix="/auth", tags=["auth"])
+
 # Include billing routes (/billing/...)
 app.include_router(billing_router)
 
@@ -33,17 +38,20 @@ app.include_router(billing_router)
 @app.post("/edge")
 async def process_edge(
     image: UploadFile = File(...),
-    client_id: str = Header(..., alias="X-Client-Id"),
+    current_user = Depends(get_current_user),
 ):
     """
     Main edge-processing endpoint.
     Consumes one credit per image (paid first, then free).
     Returns a PNG outline as Base64 data URL.
+    Credits sind jetzt an user_id (Account) gebunden.
     """
+    user_id = current_user.user_id
+
     try:
-        # First: try to consume a credit for this client
+        # Creditverbrauch für diesen Account
         try:
-            consume_credit_or_fail(client_id)
+            consume_credit_or_fail(user_id)
         except NoCreditsError:
             # No credits available
             raise HTTPException(
@@ -86,14 +94,15 @@ async def process_edge(
 
 @app.get("/me/credits")
 async def me_credits(
-    client_id: str = Header(..., alias="X-Client-Id"),
+    current_user = Depends(get_current_user),
 ):
     """
-    Returns the current credit status for this client:
+    Returns the current credit status for the logged-in user:
     paid_credits, free_credits, total_credits.
+    Credits sind jetzt user_id-basiert.
     """
     try:
-        status = get_credit_status(client_id)
+        status = get_credit_status(current_user.user_id)
         return JSONResponse(status)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Could not get credit status: {e}")

@@ -1,4 +1,4 @@
-# credits_manager.py
+﻿# credits_manager.py
 
 import os
 from datetime import datetime
@@ -38,18 +38,20 @@ def _get_redis_client():
     return None
 
 
-def _make_key(client_id: str) -> str:
-    return f"ew:user:{client_id}"
+def _make_key(user_id: str) -> str:
+    # Generic key for a logical "user" – in der alten Welt war das client_id,
+    # in der neuen Welt ist es user_id. Die Struktur bleibt kompatibel.
+    return f"ew:user:{user_id}"
 
 
 class NoCreditsError(Exception):
-    """Raised when a client has no credits left."""
+    """Raised when a user has no credits left."""
     pass
 
 
-def _load_user_record(client_id: str) -> Dict[str, Any]:
+def _load_user_record(user_id: str) -> Dict[str, Any]:
     client = _get_redis_client()
-    key = _make_key(client_id)
+    key = _make_key(user_id)
 
     if client is not None:
         data = client.hgetall(key) or {}
@@ -68,9 +70,9 @@ def _load_user_record(client_id: str) -> Dict[str, Any]:
     }
 
 
-def _save_user_record(client_id: str, record: Dict[str, Any]) -> None:
+def _save_user_record(user_id: str, record: Dict[str, Any]) -> None:
     client = _get_redis_client()
-    key = _make_key(client_id)
+    key = _make_key(user_id)
 
     data = {
         "paid_credits": str(int(record.get("paid_credits", 0))),
@@ -89,7 +91,6 @@ def _today_iso_in_target_tz() -> str:
     Try to get today's date in Europe/Zurich.
     If the timezone is not available, fall back to UTC/naive datetime.
     """
-    # Default: naive now (local or UTC, does not matter for date-only)
     now = datetime.utcnow()
 
     if "Europe/Zurich" and "ZoneInfo" in globals() and ZoneInfo is not None:
@@ -103,14 +104,14 @@ def _today_iso_in_target_tz() -> str:
     return now.date().isoformat()
 
 
-def refresh_free_credits(client_id: str) -> Dict[str, Any]:
+def refresh_free_credits(user_id: str) -> Dict[str, Any]:
     """
     Ensure the free tier is correctly reset once per day (Europe/Zurich if possible).
     Free credits do NOT stack. They are set back to 5 if:
       - a new day has started, and
       - the user has no paid credits.
     """
-    record = _load_user_record(client_id)
+    record = _load_user_record(user_id)
 
     today = _today_iso_in_target_tz()
 
@@ -122,18 +123,18 @@ def refresh_free_credits(client_id: str) -> Dict[str, Any]:
         record["free_credits"] = 5
         record["last_free_refill"] = today
 
-    _save_user_record(client_id, record)
+    _save_user_record(user_id, record)
     return record
 
 
-def consume_credit_or_fail(client_id: str) -> Dict[str, Any]:
+def consume_credit_or_fail(user_id: str) -> Dict[str, Any]:
     """
     Consume exactly one credit. Priority:
       1) paid_credits
       2) free_credits
     If both are zero, raise NoCreditsError.
     """
-    record = refresh_free_credits(client_id)
+    record = refresh_free_credits(user_id)
 
     paid = int(record.get("paid_credits", 0))
     free = int(record.get("free_credits", 0))
@@ -146,30 +147,30 @@ def consume_credit_or_fail(client_id: str) -> Dict[str, Any]:
     else:
         record["free_credits"] = max(free - 1, 0)
 
-    _save_user_record(client_id, record)
+    _save_user_record(user_id, record)
     return record
 
 
-def add_paid_credits(client_id: str, amount: int) -> Dict[str, Any]:
+def add_paid_credits(user_id: str, amount: int) -> Dict[str, Any]:
     """
     Add paid credits (from Stripe purchases or subscriptions).
     Credits are stackable and do not expire.
     """
     if amount <= 0:
-        return get_credit_status(client_id)
+        return get_credit_status(user_id)
 
-    record = _load_user_record(client_id)
+    record = _load_user_record(user_id)
     paid = int(record.get("paid_credits", 0))
     record["paid_credits"] = paid + amount
-    _save_user_record(client_id, record)
+    _save_user_record(user_id, record)
     return record
 
 
-def get_credit_status(client_id: str) -> Dict[str, int]:
+def get_credit_status(user_id: str) -> Dict[str, int]:
     """
-    Return the current credit status for the client.
+    Return the current credit status for the user.
     """
-    record = refresh_free_credits(client_id)
+    record = refresh_free_credits(user_id)
     paid = int(record.get("paid_credits", 0))
     free = int(record.get("free_credits", 0))
     total = paid + free
