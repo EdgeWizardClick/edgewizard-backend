@@ -483,3 +483,18 @@ async def reset_password(payload: ResetPasswordPayload):
     delete_password_reset_token(token)
 
     return GenericMessageResponse(message="Password has been updated successfully.")
+
+def admin_reset_password(email: str, new_password: str):
+    # Load existing user if present
+    user = _find_user_by_email(email)
+    if not user:
+        raise Exception("User does not exist")
+
+    user_id = user["user_id"]
+    hashed = hash_password(new_password)
+
+    user["password_hash"] = hashed
+    user["last_password_reset"] = datetime.utcnow().isoformat()
+
+    _save_user(user_id, user)
+    return user_id

@@ -299,11 +299,34 @@ async def admin_grant_credits(
             detail=f"Could not grant credits: {e}",
         )
 
+class ResetPasswordRequest(BaseModel):
+    email: str
+    new_password: str
+
+@app.post("/admin/reset-password")
+async def admin_reset_password_route(
+    payload: ResetPasswordRequest,
+    request: Request,
+):
+    if not ADMIN_API_KEY:
+        raise HTTPException(status_code=500, detail="ADMIN_API_KEY not configured")
+
+    api_key = request.headers.get("x-admin-key")
+    if api_key != ADMIN_API_KEY:
+        raise HTTPException(status_code=403, detail="Forbidden: Invalid admin key")
+
+    try:
+        from auth import admin_reset_password
+        uid = admin_reset_password(payload.email, payload.new_password)
+        return {"message": "Password reset successful", "user_id": uid}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 # Local testing: uvicorn main:app --reload
 if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run("main:app", host="0.0.0.0", port=8000)
+
 
 
 
