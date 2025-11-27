@@ -132,11 +132,69 @@ async def me_credits_status(
             detail=f"Could not get detailed credit status: {e}",
         )
 
+@app.get("/me/credits/status")
+async def me_credits_status(
+    current_user = Depends(get_current_user),
+):
+    """
+    Returns detailed credit status including timing information for the
+    next possible free-credit refill.
+
+    This endpoint does NOT change the underlying credit logic:
+      - free credits do not stack
+      - free credits are only refilled once per day
+      - if paid_credits > 0, no free credits are given
+    """
+    try:
+        # Bestehenden Status aus der existierenden Logik lesen
+        status = get_credit_status(current_user.user_id)
+
+        # Serverzeit bestimmen, bevorzugt Europe/Zurich
+        now = datetime.utcnow()
+        if ZoneInfo is not None:
+            try:
+                tz = ZoneInfo("Europe/Zurich")
+                now = datetime.now(tz)
+            except Exception:
+                # Fallback: UTC
+                pass
+
+        paid = int(status.get("paid_credits", 0))
+
+        if paid > 0:
+            # Wenn bezahlte Credits vorhanden sind, kein Free-Credit-Timer
+            next_free_refill_at = None
+        else:
+            # Nächstes Mitternacht in der Zielzeitzone (potenzieller Free-Drop)
+            tomorrow = now.date() + timedelta(days=1)
+            next_midnight = datetime.combine(
+                tomorrow,
+                dt_time(0, 0, 0),
+                tzinfo=now.tzinfo,
+            )
+            next_free_refill_at = next_midnight.isoformat()
+
+        return JSONResponse(
+            {
+                **status,
+                "next_free_refill_at": next_free_refill_at,
+                "server_now": now.isoformat(),
+            }
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Could not get detailed credit status: {e}",
+        )
+
+
 # Local testing: uvicorn main:app --reload
 if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run("main:app", host="0.0.0.0", port=8000)
+
+
 
 
 
