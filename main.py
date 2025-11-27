@@ -7,6 +7,7 @@ from billing import router as billing_router
 from credits_manager import (consume_credit_or_fail, NoCreditsError, get_credit_status, get_credit_status_with_reset_info)
 
 import io
+from pydantic import BaseModel
 from PIL import Image, ImageOps
 import base64
 import time
@@ -303,6 +304,7 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run("main:app", host="0.0.0.0", port=8000)
+
 
 
 
