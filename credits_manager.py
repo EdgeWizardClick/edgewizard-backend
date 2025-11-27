@@ -226,3 +226,7 @@ def get_credit_status_with_reset_info(user_id: str) -> Dict[str, Any]:
         "next_free_refill_at": next_free_refill_at,
         "server_now": server_now,
     }
+# Use a fresh Redis namespace for credits to avoid old incompatible data.
+# Existing credit logic stays unchanged; only the key prefix differs.
+def _make_key(user_id: str) -> str:
+    return f"credits_v2:{user_id}"
