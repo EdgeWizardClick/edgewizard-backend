@@ -21,7 +21,7 @@ from pydantic import BaseModel
 from PIL import Image, ImageOps
 from pillow_heif import register_heif_opener
 
-from auth import router as auth_router, get_current_user
+from auth import router as auth_router, get_current_user, get_user_by_email
 
 # Load optional timezone info only if needed in future
 try:
@@ -204,6 +204,68 @@ async def admin_grant_credits(
         )
 
 
+class GrantCreditsByEmailRequest(BaseModel):
+    email: str
+    credits: int
+
+
+@app.post("/admin/grant-credits-by-email")
+async def admin_grant_credits_by_email(
+    payload: GrantCreditsByEmailRequest,
+    request: Request,
+):
+    """
+    Admin-only endpoint to grant paid credits to a user, identified by email.
+
+    Security:
+      - Requires the HTTP header "x-admin-key" to match ADMIN_API_KEY from the environment.
+      - Intended for support use (manual corrections, promo credits, etc.).
+    """
+    if not ADMIN_API_KEY:
+        raise HTTPException(
+            status_code=500,
+            detail="ADMIN_API_KEY is not configured on the server.",
+        )
+
+    api_key = request.headers.get("x-admin-key")
+    if api_key != ADMIN_API_KEY:
+        raise HTTPException(
+            status_code=403,
+            detail="Forbidden: invalid admin key.",
+        )
+
+    if payload.credits <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail="credits must be a positive integer.",
+        )
+
+    # Look up user by email
+    user = get_user_by_email(payload.email)
+    if user is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"User with email {payload.email} not found.",
+        )
+
+    try:
+        status = add_paid_credits(user.user_id, payload.credits)
+        return JSONResponse(
+            {
+                "message": "Credits granted successfully.",
+                "user_id": user.user_id,
+            "email": str(user.email),
+                "granted_credits": payload.credits,
+                "updated_status": status,
+            }
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Could not grant credits by email: {e}",
+        )
+
+
 class ResetPasswordRequest(BaseModel):
     email: str
     new_password: str
@@ -238,3 +300,5 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run("main:app", host="0.0.0.0", port=8000)
+
+
