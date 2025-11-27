@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
+ï»¿from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -49,7 +49,7 @@ async def process_edge(
     user_id = current_user.user_id
 
     try:
-        # Creditverbrauch für diesen Account
+        # Credit consumption for this account
         try:
             consume_credit_or_fail(user_id)
         except NoCreditsError:
@@ -137,5 +137,6 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run("main:app", host="0.0.0.0", port=8000)
+
 
 
