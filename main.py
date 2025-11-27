@@ -1,4 +1,4 @@
-﻿from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
+﻿from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -188,11 +188,124 @@ async def me_credits_status(
         )
 
 
+@app.get("/me/credits/status")
+async def me_credits_status(
+    current_user = Depends(get_current_user),
+):
+    """
+    Returns detailed credit status including timing information for the
+    next possible free-credit refill.
+
+    This endpoint does NOT change the underlying credit logic:
+      - free credits do not stack
+      - free credits are only refilled once per day
+      - if paid_credits > 0, no free credits are given
+    """
+    try:
+        # Use the existing credit logic
+        status = get_credit_status(current_user.user_id)
+
+        # Determine server time, preferring Europe/Zurich
+        now = datetime.utcnow()
+        if ZoneInfo is not None:
+            try:
+                tz = ZoneInfo("Europe/Zurich")
+                now = datetime.now(tz)
+            except Exception:
+                # Fallback: UTC
+                pass
+
+        paid = int(status.get("paid_credits", 0))
+
+        if paid > 0:
+            # When there are paid credits, do not expose a free-credit timer
+            next_free_refill_at = None
+        else:
+            # Next midnight in the target timezone (potential free-drop)
+            tomorrow = now.date() + timedelta(days=1)
+            next_midnight = datetime.combine(
+                tomorrow,
+                dt_time(0, 0, 0),
+                tzinfo=now.tzinfo,
+            )
+            next_free_refill_at = next_midnight.isoformat()
+
+        return JSONResponse(
+            {
+                **status,
+                "next_free_refill_at": next_free_refill_at,
+                "server_now": now.isoformat(),
+            }
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Could not get detailed credit status: {e}",
+        )
+
+
+class GrantCreditsRequest(BaseModel):
+    user_id: str
+    credits: int
+
+
+@app.post("/admin/grant-credits")
+async def admin_grant_credits(
+    payload: GrantCreditsRequest,
+    request: Request,
+):
+    """
+    Admin-only endpoint to grant paid credits to a user.
+
+    Security:
+      - Requires the HTTP header "x-admin-key" to match ADMIN_API_KEY from the environment.
+      - Should only be used by the owner of EdgeWizard for support / manual corrections.
+    """
+    if not ADMIN_API_KEY:
+        raise HTTPException(
+            status_code=500,
+            detail="ADMIN_API_KEY is not configured on the server.",
+        )
+
+    api_key = request.headers.get("x-admin-key")
+    if api_key != ADMIN_API_KEY:
+        raise HTTPException(
+            status_code=403,
+            detail="Forbidden: invalid admin key.",
+        )
+
+    if payload.credits <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail="credits must be a positive integer.",
+        )
+
+    try:
+        add_paid_credits(payload.user_id, payload.credits)
+        # Return the updated status for convenience
+        status = get_credit_status(payload.user_id)
+        return JSONResponse(
+            {
+                "message": "Credits granted successfully.",
+                "user_id": payload.user_id,
+                "granted_credits": payload.credits,
+                "updated_status": status,
+            }
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Could not grant credits: {e}",
+        )
+
 # Local testing: uvicorn main:app --reload
 if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run("main:app", host="0.0.0.0", port=8000)
+
+
+
 
 
 
