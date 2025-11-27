@@ -1,7 +1,7 @@
-﻿# credits_manager.py
+# credits_manager.py
 
 import os
-from datetime import datetime
+from datetime import datetime, time, timedelta
 from typing import Dict, Any
 
 from dotenv import load_dotenv
@@ -39,7 +39,7 @@ def _get_redis_client():
 
 
 def _make_key(user_id: str) -> str:
-    # Generic key for a logical "user" – in der alten Welt war das client_id,
+    # Generic key for a logical "user" � in der alten Welt war das client_id,
     # in der neuen Welt ist es user_id. Die Struktur bleibt kompatibel.
     return f"ew:user:{user_id}"
 
@@ -178,4 +178,51 @@ def get_credit_status(user_id: str) -> Dict[str, int]:
         "paid_credits": paid,
         "free_credits": free,
         "total_credits": total,
+    }
+
+def _now_in_target_tz() -> datetime:
+    """
+    Return current datetime in Europe/Zurich if possible, otherwise UTC.
+    """
+    now = datetime.utcnow()
+
+    if ZoneInfo is not None:
+        try:
+            tz = ZoneInfo("Europe/Zurich")
+            return datetime.now(tz)
+        except Exception:
+            return now
+
+    return now
+
+
+def get_credit_status_with_reset_info(user_id: str) -> Dict[str, Any]:
+    """
+    Extended credit status including next free refill time and server time.
+    This DOES NOT change the core credit logic:
+      - free credits do not stack
+      - free credits are only refilled if there are no paid credits
+      - daily reset is based on the Europe/Zurich calendar day
+    """
+    record = refresh_free_credits(user_id)
+
+    paid = int(record.get("paid_credits", 0))
+    free = int(record.get("free_credits", 0))
+    total = paid + free
+
+    now_local = _now_in_target_tz()
+    server_now = now_local.isoformat()
+
+    next_free_refill_at = None
+    if paid == 0:
+        tomorrow = now_local.date() + timedelta(days=1)
+        next_midnight = datetime.combine(tomorrow, time(0, 0, 0), tzinfo=now_local.tzinfo)
+        next_free_refill_at = next_midnight.isoformat()
+
+    return {
+        "paid_credits": paid,
+        "free_credits": free,
+        "total_credits": total,
+        "next_free_refill_at": next_free_refill_at,
+        "server_now": server_now,
     }

@@ -1,10 +1,10 @@
-﻿from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from edgewizard_pipeline import run_edge_pipeline
 from billing import router as billing_router
-from credits_manager import consume_credit_or_fail, NoCreditsError, get_credit_status
+from credits_manager import (consume_credit_or_fail, NoCreditsError, get_credit_status, get_credit_status_with_reset_info)
 
 import io
 from PIL import Image, ImageOps
@@ -49,7 +49,7 @@ async def process_edge(
     user_id = current_user.user_id
 
     try:
-        # Creditverbrauch für diesen Account
+        # Creditverbrauch f�r diesen Account
         try:
             consume_credit_or_fail(user_id)
         except NoCreditsError:
@@ -108,8 +108,34 @@ async def me_credits(
         raise HTTPException(status_code=500, detail=f"Could not get credit status: {e}")
 
 
+@app.get("/me/credits/status")
+async def me_credits_status(
+    current_user = Depends(get_current_user),
+):
+    """
+    Returns detailed credit status for the logged-in user, including timing
+    information for the next possible free-credit refill.
+
+    This endpoint does NOT change the underlying credit logic. It only reads:
+      - paid_credits
+      - free_credits
+      - total_credits
+      - next_free_refill_at (ISO) or None if paid credits exist
+      - server_now (ISO, Europe/Zurich if available)
+    """
+    try:
+        status = get_credit_status_with_reset_info(current_user.user_id)
+        return JSONResponse(status)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Could not get detailed credit status: {e}",
+        )
+
 # Local testing: uvicorn main:app --reload
 if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run("main:app", host="0.0.0.0", port=8000)
+
+
