@@ -1,4 +1,4 @@
-﻿from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Request
+﻿from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -86,7 +86,7 @@ async def process_edge(
         pil_image = ImageOps.exif_transpose(pil_image)
 
         # Run the high-quality edge pipeline
-        result_image = run_edge_pipeline(pil_image)
+        result_image = run_edge_pipeline(pil_image, enable_border=outline)
 
         # Encode result as PNG Base64 data URL
         buffer = io.BytesIO()
@@ -300,5 +300,6 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run("main:app", host="0.0.0.0", port=8000)
+
 
 

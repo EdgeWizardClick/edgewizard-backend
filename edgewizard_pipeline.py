@@ -365,10 +365,16 @@ def add_soft_red_green_lines(edge_img: Image.Image, rgb_img: Image.Image) -> Ima
 # PUBLIC PIPELINE FUNCTION
 # --------------------------------------------------------
 
-def run_edge_pipeline(img_color: Image.Image) -> Image.Image:
+def run_edge_pipeline(
+    img_color: Image.Image,
+    enable_border: bool | None = None,
+) -> Image.Image:
     """
     Takes an RGB PIL image and returns the final EdgeWizard result
     as an L-mode (grayscale) PIL image.
+
+    If enable_border is None, the global ADD_BORDER config is used.
+    If enable_border is True/False, it overrides the global setting.
     """
     img_color = img_color.convert("RGB")
 
@@ -379,7 +385,9 @@ def run_edge_pipeline(img_color: Image.Image) -> Image.Image:
 
     edge_img = add_soft_red_green_lines(edge_img, img_color)
 
-    if ADD_BORDER:
+    use_border = ADD_BORDER if enable_border is None else enable_border
+    if use_border:
         edge_img = add_border(edge_img, BORDER_WIDTH_PX)
 
     return edge_img
+
