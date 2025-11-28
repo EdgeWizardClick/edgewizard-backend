@@ -409,7 +409,19 @@ async def login(payload: LoginRequest):
     password = payload.password
 
     user = get_user_by_email(email)
-    if not user or not verify_password(password, user.password_hash):
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Email or password is invalid.",
+        )
+
+    if getattr(user, "deleted_at", None) is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account has been deleted.",
+        )
+
+    if not verify_password(password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Email or password is invalid.",
@@ -551,4 +563,5 @@ def delete_own_account(
         pass
 
     return {"message": "Account has been deleted."}
+
 
