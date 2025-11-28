@@ -230,3 +230,19 @@ def get_credit_status_with_reset_info(user_id: str) -> Dict[str, Any]:
 # Existing credit logic stays unchanged; only the key prefix differs.
 def _make_key(user_id: str) -> str:
     return f"credits_v2:{user_id}"
+
+
+def clear_all_credits(user_id: str) -> Dict[str, int]:
+    """
+    Reset all credits (paid and free) for the given user to zero.
+    Used when deleting accounts.
+    """
+    record = _load_user_record(user_id)
+    record["paid_credits"] = 0
+    record["free_credits"] = 0
+    _save_user_record(user_id, record)
+    return {
+        "paid_credits": 0,
+        "free_credits": 0,
+        "total_credits": 0,
+    }
