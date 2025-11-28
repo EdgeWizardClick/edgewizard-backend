@@ -11,6 +11,7 @@ from pydantic import BaseModel, EmailStr
 from passlib.context import CryptContext
 from jose import JWTError, jwt
 from dotenv import load_dotenv
+from credits_manager import clear_all_credits
 
 # Optional: redis for production
 try:
@@ -84,6 +85,7 @@ class UserInStore(BaseModel):
     password_hash: str
     created_at: datetime
     last_login: Optional[datetime] = None
+    deleted_at: Optional[datetime] = None
     stripe_customer_id: Optional[str] = None
 
 
@@ -185,12 +187,14 @@ def get_user_by_id(user_id: str) -> Optional[UserInStore]:
             return None
 
     try:
+        deleted_raw = data.get("deleted_at")
         return UserInStore(
             user_id=data["user_id"],
             email=data["email"],
             password_hash=data["password_hash"],
             created_at=datetime.fromisoformat(data["created_at"]),
             last_login=datetime.fromisoformat(data["last_login"]) if data.get("last_login") else None,
+            deleted_at=datetime.fromisoformat(deleted_raw) if deleted_raw else None,
             stripe_customer_id=data.get("stripe_customer_id"),
         )
     except Exception:
@@ -223,6 +227,7 @@ def save_user(user: UserInStore) -> None:
         "password_hash": user.password_hash,
         "created_at": user.created_at.isoformat(),
         "last_login": user.last_login.isoformat() if user.last_login else None,
+        "deleted_at": user.deleted_at.isoformat() if user.deleted_at else None,
         "stripe_customer_id": user.stripe_customer_id,
     }
 
@@ -357,6 +362,13 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> UserInStore:
     user = get_user_by_id(user_id)
     if user is None:
         raise credentials_exception
+
+    if user.deleted_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account has been deleted.",
+        )
+
     return user
 
 
@@ -498,3 +510,44 @@ def admin_reset_password(email: str, new_password: str):
 
     _save_user(user_id, user)
     return user_id
+
+
+class DeleteAccountRequest(BaseModel):
+    confirmation_text: str
+
+
+@router.post("/me/delete-account")
+def delete_own_account(
+    payload: DeleteAccountRequest,
+    current_user: UserInStore = Depends(get_current_user),
+):
+    """
+    Soft-delete the current user account.
+    - Requires the confirmation text to be exactly "Delete".
+    - Marks the user as deleted and clears all credits.
+    """
+    if payload.confirmation_text != "Delete":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail='Confirmation text must exactly be "Delete".',
+        )
+
+    user = get_user_by_id(current_user.user_id)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found.",
+        )
+
+    # Soft delete: mark as deleted
+    user.deleted_at = datetime.utcnow()
+    save_user(user)
+
+    # Best-effort: clear all credits
+    try:
+        clear_all_credits(current_user.user_id)
+    except Exception:
+        # We do not fail the deletion if credits clearing has an issue
+        pass
+
+    return {"message": "Account has been deleted."}
