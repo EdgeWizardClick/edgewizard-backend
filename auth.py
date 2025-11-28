@@ -551,3 +551,4 @@ def delete_own_account(
         pass
 
     return {"message": "Account has been deleted."}
+
