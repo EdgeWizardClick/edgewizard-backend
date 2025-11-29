@@ -127,29 +127,6 @@ def refresh_free_credits(user_id: str) -> Dict[str, Any]:
     return record
 
 
-def consume_credit_or_fail(user_id: str) -> Dict[str, Any]:
-    """
-    Consume exactly one credit. Priority:
-      1) paid_credits
-      2) free_credits
-    If both are zero, raise NoCreditsError.
-    """
-    record = refresh_free_credits(user_id)
-
-    paid = int(record.get("paid_credits", 0))
-    free = int(record.get("free_credits", 0))
-
-    if paid <= 0 and free <= 0:
-        raise NoCreditsError("No credits available")
-
-    if paid > 0:
-        record["paid_credits"] = paid - 1
-    else:
-        record["free_credits"] = max(free - 1, 0)
-
-    _save_user_record(user_id, record)
-    return record
-
 
 def add_paid_credits(user_id: str, amount: int) -> Dict[str, Any]:
     """
@@ -245,5 +222,56 @@ def clear_all_credits(user_id: str) -> Dict[str, int]:
         "paid_credits": 0,
         "free_credits": 0,
         "total_credits": 0,
+    }
+
+def consume_credit_or_fail(user_id: str, amount: int = 1) -> Dict[str, int]:
+    """
+    Try to consume `amount` credits for the given user.
+
+    - Paid credits are always consumed first.
+    - If total (paid + free) < amount, a NoCreditsError is raised and
+      no credits are consumed.
+    """
+    if amount <= 0:
+        # Nothing to consume – just return current status
+        return get_credit_status(user_id)
+
+    # Always refresh free credits first (daily refill)
+    record = refresh_free_credits(user_id)
+
+    paid = int(record.get("paid_credits", 0))
+    free = int(record.get("free_credits", 0))
+    total = paid + free
+
+    if total < amount:
+        # Strict behavior: reject completely, do not consume partial credits
+        raise NoCreditsError(
+            f"Not enough credits. Required: {amount}, available: {total}."
+        )
+
+    remaining = amount
+
+    # Consume paid credits first
+    if paid >= remaining:
+        paid -= remaining
+        remaining = 0
+    else:
+        remaining -= paid
+        paid = 0
+
+    # Then consume free credits
+    if remaining > 0:
+        free = max(free - remaining, 0)
+        remaining = 0
+
+    record["paid_credits"] = paid
+    record["free_credits"] = free
+
+    _save_user_record(user_id, record)
+
+    return {
+        "paid_credits": paid,
+        "free_credits": free,
+        "total_credits": paid + free,
     }
 
