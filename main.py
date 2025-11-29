@@ -1,4 +1,4 @@
-﻿from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Form, Form, Request
+﻿from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -54,7 +54,8 @@ app.include_router(billing_router)
 @app.post("/edge")
 async def process_edge(
     image: UploadFile = File(...),
-    current_user=Depends(get_current_user),
+    outline: bool = Form(False),
+    current_user = Depends(get_current_user),
 ):
     """
     Main edge-processing endpoint.
@@ -87,6 +88,7 @@ async def process_edge(
 
         # Run the high-quality edge pipeline
         result_image = run_edge_pipeline(pil_image, enable_border=outline)
+
 
         # Encode result as PNG Base64 data URL
         buffer = io.BytesIO()
