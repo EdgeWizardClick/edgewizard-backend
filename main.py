@@ -68,7 +68,8 @@ async def process_edge(
     try:
         # Credit consumption for this account
         try:
-            consume_credit_or_fail(user_id)
+            needed_credits = 2 if outline else 1
+            consume_credit_or_fail(user_id, amount=needed_credits)
         except NoCreditsError:
             # No credits available
             raise HTTPException(
@@ -302,6 +303,7 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run("main:app", host="0.0.0.0", port=8000)
+
 
 
 

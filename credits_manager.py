@@ -1,4 +1,4 @@
-# credits_manager.py
+﻿# credits_manager.py
 
 import os
 from datetime import datetime, time, timedelta
@@ -39,7 +39,7 @@ def _get_redis_client():
 
 
 def _make_key(user_id: str) -> str:
-    # Generic key for a logical "user" � in der alten Welt war das client_id,
+    # Generic key for a logical "user" – in der alten Welt war das client_id,
     # in der neuen Welt ist es user_id. Die Struktur bleibt kompatibel.
     return f"ew:user:{user_id}"
 
@@ -246,3 +246,4 @@ def clear_all_credits(user_id: str) -> Dict[str, int]:
         "free_credits": 0,
         "total_credits": 0,
     }
+
