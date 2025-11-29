@@ -392,3 +392,30 @@ def run_edge_pipeline(
     return edge_img
 
 
+
+
+def run_edge_pipeline(img_color: Image.Image, enable_border=None) -> Image.Image:
+    """
+    EdgeWizard main pipeline.
+
+    - img_color: RGB PIL image
+    - enable_border:
+        None  -> use global ADD_BORDER setting
+        True  -> force border ON for this call
+        False -> force border OFF for this call
+    """
+    img_color = img_color.convert("RGB")
+
+    edge_img = compute_edge_map(img_color)
+
+    if LINE_SOFT_NORMALIZE:
+        edge_img = soft_normalize_lines(edge_img)
+
+    edge_img = add_soft_red_green_lines(edge_img, img_color)
+
+    # Decide whether to draw the border
+    use_border = ADD_BORDER if enable_border is None else bool(enable_border)
+    if use_border:
+        edge_img = add_border(edge_img, BORDER_WIDTH_PX)
+
+    return edge_img
