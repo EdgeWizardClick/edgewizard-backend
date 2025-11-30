@@ -1,4 +1,5 @@
-﻿import os
+﻿import requests
+import os
 import json
 import uuid
 import secrets
@@ -326,19 +327,57 @@ def delete_password_reset_token(token: str) -> None:
 
 def send_password_reset_email(email: str, reset_token: str) -> None:
     """
-    Placeholder for real email sending.
-    For now, we just store the reset link in Redis or in-memory for debugging.
-    """
-    reset_link = f"https://edgewizard.click/reset-password?token={reset_token}"
-    client = _get_redis_client()
-    debug_key = f"ew:password_reset:last_link:{email.strip().lower()}"
+    Send a real password reset email via MailerSend.
 
-    if client is not None:
-        client.set(debug_key, reset_link, ex=PASSWORD_RESET_TOKEN_EXPIRE_MINUTES * 60)
-    else:
-        # store in the token dictionary as additional info
-        if reset_token in _password_reset_tokens:
-            _password_reset_tokens[reset_token]["debug_link"] = reset_link
+    - Builds a reset link based on APP_BASE_URL.
+    - Uses MAILERSEND_API_KEY and MAILERSEND_FROM_EMAIL from the environment.
+    """
+    api_key = os.getenv("MAILERSEND_API_KEY")
+    from_email = os.getenv("MAILERSEND_FROM_EMAIL", "no-reply@edgewizard.click")
+    app_base_url = os.getenv("APP_BASE_URL", "https://wizardedge.preview.emergentagent.com")
+
+    if not api_key:
+        # For MVP we just log and return, endpoint bleibt trotzdem generisch.
+        print("MAILERSEND_API_KEY is not set - cannot send password reset email.")
+        return
+
+    reset_link = f"{app_base_url.rstrip('/')}/reset-password?token={reset_token}"
+
+    url = "https://api.mailersend.com/v1/email"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
+    payload = {
+        "from": {
+            "email": from_email,
+            "name": "EdgeWizard",
+        },
+        "to": [
+            {
+                "email": email,
+            }
+        ],
+        "subject": "Reset your EdgeWizard password",
+        "text": (
+            "You requested a password reset for your EdgeWizard account.\n\n"
+            f"Click the following link to set a new password:\n{reset_link}\n\n"
+            "If you did not request this, you can ignore this email."
+        ),
+        "html": (
+            "<p>You requested a password reset for your EdgeWizard account.</p>"
+            f"<p><a href=\"{reset_link}\">Click here to reset your password</a></p>"
+            "<p>If you did not request this, you can ignore this email.</p>"
+        ),
+    }
+
+    try:
+        resp = requests.post(url, headers=headers, json=payload, timeout=10)
+        if resp.status_code >= 400:
+            print(f"MailerSend error: status={resp.status_code}, body={resp.text}")
+    except Exception as e:
+        print(f"Error while sending password reset email via MailerSend: {e}")
 
 
 # ============================================================================
