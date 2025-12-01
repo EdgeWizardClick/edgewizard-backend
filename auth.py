@@ -334,14 +334,14 @@ def send_password_reset_email(email: str, reset_token: str) -> None:
     """
     api_key = os.getenv("MAILERSEND_API_KEY")
     from_email = os.getenv("MAILERSEND_FROM_EMAIL", "no-reply@edgewizard.click")
-    app_base_url = os.getenv("APP_BASE_URL", "https://wizardedge.preview.emergentagent.com")
+    app_base_url = os.getenv("APP_BASE_URL", "https://https://app.edgewizard.click")
 
     if not api_key:
         # For MVP we just log and return, endpoint bleibt trotzdem generisch.
         print("MAILERSEND_API_KEY is not set - cannot send password reset email.")
         return
 
-    reset_link = f"{app_base_url.rstrip('/')}/password-reset?token={reset_token}"
+    reset_link = f"{app_base_url.rstrip('/')}/reset-password?token={reset_token}"
 
     url = "https://api.mailersend.com/v1/email"
     headers = {
