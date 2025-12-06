@@ -90,28 +90,10 @@ async def process_edge(
         pil_image = Image.open(io.BytesIO(file_bytes))
         pil_image = ImageOps.exif_transpose(pil_image)
 
-        # Decide desired output format based on original upload (optimized for iPhone / HEIC)
-        original_format = (pil_image.format or "").upper()
-        original_ext = (os.path.splitext(image.filename or "")[1] or "").lower()
-
-        if original_format in ("PNG",):
-            output_format = "PNG"
-            output_mime = "image/png"
-            output_ext = "png"
-        elif original_format in ("JPEG", "JPG"):
-            output_format = "JPEG"
-            output_mime = "image/jpeg"
-            output_ext = "jpg"
-        elif original_format in ("HEIF", "HEIC") or original_ext in (".heic", ".heif"):
-            # Optimized for iPhone / HEIC: convert to JPEG for maximum compatibility
-            output_format = "JPEG"
-            output_mime = "image/jpeg"
-            output_ext = "jpg"
-        else:
-            # Fallback for unknown formats
-            output_format = "PNG"
-            output_mime = "image/png"
-            output_ext = "png"
+                # Always output PNG for maximum stability and consistency
+        output_format = "PNG"
+        output_mime = "image/png"
+        output_ext = "png"
 
         # Apply line style (Thin / Bold) before edge detection
         # Thin (default) -> no change, Bold -> adaptive smoothing
