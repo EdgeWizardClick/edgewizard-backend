@@ -90,13 +90,24 @@ async def process_edge(
         pil_image = Image.open(io.BytesIO(file_bytes))
         pil_image = ImageOps.exif_transpose(pil_image)
 
-                # Always output PNG for maximum stability and consistency
+        # --- PNG/JPG/… normalisieren wie im Original-Script ---
+        # Ziel: immer ein sauberes RGB-Bild ohne transparente/Palette-Artefakte
+        if pil_image.mode in ("RGBA", "LA", "P"):
+            # Zuerst nach RGBA konvertieren, dann auf weissen Hintergrund legen
+            pil_image = pil_image.convert("RGBA")
+            background = Image.new("RGBA", pil_image.size, (255, 255, 255, 255))
+            background.paste(pil_image, mask=pil_image.getchannel("A"))
+            pil_image = background.convert("RGB")
+        else:
+            pil_image = pil_image.convert("RGB")
+        # -------------------------------------------------------
+
+        # Always output PNG for maximum stability and consistency
         output_format = "PNG"
         output_mime = "image/png"
         output_ext = "png"
 
         # Apply line style (Thin / Bold) before edge detection
-        # Thin (default) -> no change, Bold -> adaptive smoothing
         pil_image = apply_line_style(pil_image, line_style)
 
         # Run the high-quality edge pipeline
@@ -105,7 +116,7 @@ async def process_edge(
         # Encode result as Base64 data URL in the chosen format
         buffer = io.BytesIO()
 
-        # For JPEG ensure compatible mode
+        # For JPEG ensure compatible mode (falls wir spaeter JPEG nutzen wollten)
         save_img = result_image
         if output_format == "JPEG" and result_image.mode not in ("L", "RGB"):
             save_img = result_image.convert("L")
