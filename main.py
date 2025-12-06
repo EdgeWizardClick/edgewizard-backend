@@ -17,6 +17,7 @@ import io
 import os
 import base64
 import time
+from PIL import Image, ImageOps
 
 from pydantic import BaseModel
 from PIL import Image, ImageOps
@@ -62,7 +63,7 @@ async def process_edge(
     """
     Main edge-processing endpoint.
     Consumes one credit per image (paid first, then free).
-    Returns a PNG outline as Base64 data URL.
+    Returns an outline as Base64 data URL.
     Credits sind jetzt an user_id (Account) gebunden.
     """
     user_id = current_user.user_id
@@ -89,25 +90,59 @@ async def process_edge(
         pil_image = Image.open(io.BytesIO(file_bytes))
         pil_image = ImageOps.exif_transpose(pil_image)
 
-                # Apply line style (Thin / Bold) before edge detection
+        # Decide desired output format based on original upload (optimized for iPhone / HEIC)
+        original_format = (pil_image.format or "").upper()
+        original_ext = (os.path.splitext(image.filename or "")[1] or "").lower()
+
+        if original_format in ("PNG",):
+            output_format = "PNG"
+            output_mime = "image/png"
+            output_ext = "png"
+        elif original_format in ("JPEG", "JPG"):
+            output_format = "JPEG"
+            output_mime = "image/jpeg"
+            output_ext = "jpg"
+        elif original_format in ("HEIF", "HEIC") or original_ext in (".heic", ".heif"):
+            # Optimized for iPhone / HEIC: convert to JPEG for maximum compatibility
+            output_format = "JPEG"
+            output_mime = "image/jpeg"
+            output_ext = "jpg"
+        else:
+            # Fallback for unknown formats
+            output_format = "PNG"
+            output_mime = "image/png"
+            output_ext = "png"
+
+        # Apply line style (Thin / Bold) before edge detection
         # Thin (default) -> no change, Bold -> adaptive smoothing
         pil_image = apply_line_style(pil_image, line_style)
 
         # Run the high-quality edge pipeline
         result_image = run_edge_pipeline(pil_image, enable_border=outline)
 
-
-        # Encode result as PNG Base64 data URL
+        # Encode result as Base64 data URL in the chosen format
         buffer = io.BytesIO()
-        result_image.save(buffer, format="PNG")
-        png_bytes = buffer.getvalue()
-        base64_data = base64.b64encode(png_bytes).decode("ascii")
-        data_url = f"data:image/png;base64,{base64_data}"
+
+        # For JPEG ensure compatible mode
+        save_img = result_image
+        if output_format == "JPEG" and result_image.mode not in ("L", "RGB"):
+            save_img = result_image.convert("L")
+
+        save_img.save(buffer, format=output_format)
+        out_bytes = buffer.getvalue()
+        base64_data = base64.b64encode(out_bytes).decode("ascii")
+        data_url = f"data:{output_mime};base64,{base64_data}"
 
         # Small artificial delay (as before)
         time.sleep(0.1)
 
-        return JSONResponse({"result_data_url": data_url})
+        return JSONResponse(
+            {
+                "result_data_url": data_url,
+                "result_extension": output_ext,
+                "result_mime": output_mime,
+            }
+        )
 
     except HTTPException:
         # Re-raise explicit HTTP errors
