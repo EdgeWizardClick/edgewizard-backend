@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from edgewizard_pipeline import run_edge_pipeline
+from line_style import apply_line_style, LINE_STYLE_THIN, LINE_STYLE_BOLD
 from billing import router as billing_router
 from credits_manager import (
     consume_credit_or_fail,
@@ -55,6 +56,7 @@ app.include_router(billing_router)
 async def process_edge(
     image: UploadFile = File(...),
     outline: bool = Form(False),
+    line_style: str = Form("thin"),
     current_user = Depends(get_current_user),
 ):
     """
@@ -86,6 +88,10 @@ async def process_edge(
         # Open as PIL image and fix EXIF orientation
         pil_image = Image.open(io.BytesIO(file_bytes))
         pil_image = ImageOps.exif_transpose(pil_image)
+
+                # Apply line style (Thin / Bold) before edge detection
+        # Thin (default) -> no change, Bold -> adaptive smoothing
+        pil_image = apply_line_style(pil_image, line_style)
 
         # Run the high-quality edge pipeline
         result_image = run_edge_pipeline(pil_image, enable_border=outline)
