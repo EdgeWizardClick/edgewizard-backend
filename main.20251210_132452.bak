@@ -57,7 +57,6 @@ app.include_router(billing_router)
 async def process_edge(
     image: UploadFile = File(...),
     outline: bool = Form(False),
-    keep_black_lines: bool = Form(False),
     line_style: str = Form("thin"),
     current_user = Depends(get_current_user),
 ):
@@ -72,7 +71,7 @@ async def process_edge(
     try:
         # Credit consumption for this account
         try:
-            needed_credits = 1 + (1 if outline else 0) + (1 if keep_black_lines else 0)
+            needed_credits = 2 if outline else 1
             consume_credit_or_fail(user_id, amount=needed_credits)
         except NoCreditsError:
             # No credits available
@@ -112,7 +111,7 @@ async def process_edge(
         pil_image = apply_line_style(pil_image, line_style)
 
         # Run the high-quality edge pipeline
-        result_image = run_edge_pipeline(pil_image, enable_border=outline, keep_black_lines=keep_black_lines)
+        result_image = run_edge_pipeline(pil_image, enable_border=outline)
 
         # Encode result as Base64 data URL in the chosen format
         buffer = io.BytesIO()
@@ -338,7 +337,6 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run("main:app", host="0.0.0.0", port=8000)
-
 
 
 
