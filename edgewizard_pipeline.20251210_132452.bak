@@ -1,4 +1,5 @@
-﻿"""EdgeWizard V1.0.0 - backend compatible pipeline.
+﻿"""
+EdgeWizard V1.0.0 - backend compatible pipeline.
 This version works fully in memory (no input/output folders)
 and is designed to be used from a FastAPI/Railway backend.
 """
@@ -41,10 +42,6 @@ BORDER_WIDTH_PX = 2
 RG_MIN_COVERAGE = 0.25
 RG_MIN_MARGIN_FRAC = 0.02
 RG_LINE_WIDTH = 1
-
-# Keep Black Lines add-on thresholds
-DARK_VALUE_THRESH = 0.32
-NEUTRAL_DIFF_THRESH = 0.08
 
 
 # --------------------------------------------------------
@@ -365,82 +362,63 @@ def add_soft_red_green_lines(edge_img: Image.Image, rgb_img: Image.Image) -> Ima
 
 
 # --------------------------------------------------------
-# KEEP BLACK LINES ADD-ON (NON-DESTRUCTIVE)
-# --------------------------------------------------------
-
-def apply_keep_black_lines(
-    edge_img: Image.Image,
-    rgb_img: Image.Image,
-    enabled: bool,
-) -> Image.Image:
-    """Non-destructive 'Keep Black Lines' add-on.
-
-    - Does NOT change the edge detection result.
-    - Only turns truly dark, near-neutral pixels from the original RGB
-      into solid black lines in the edge image.
-    """
-    if not enabled:
-        return edge_img
-
-    edge_arr = np.array(edge_img).astype("float32") / 255.0
-    arr = np.array(rgb_img).astype("float32") / 255.0
-
-    r = arr[:, :, 0]
-    g = arr[:, :, 1]
-    b = arr[:, :, 2]
-
-    max_c = np.maximum(np.maximum(r, g), b)
-    min_c = np.minimum(np.minimum(r, g), b)
-    color_diff = max_c - min_c
-
-    is_dark = max_c < DARK_VALUE_THRESH
-    is_neutral = color_diff < NEUTRAL_DIFF_THRESH
-    keep_black_mask = is_dark & is_neutral
-
-    out = edge_arr.copy()
-    out[keep_black_mask] = 0.0
-
-    return float_to_pil(out)
-
-
-# --------------------------------------------------------
 # PUBLIC PIPELINE FUNCTION
 # --------------------------------------------------------
 
-def run_edge_pipeline(
-    img_color: Image.Image,
-    enable_border=None,
-    keep_black_lines: bool = False,
-) -> Image.Image:
-    """EdgeWizard main pipeline (backend version).
+def run_edge_pipeline(img_color: Image.Image, enable_border=None) -> Image.Image:
+    """
+    EdgeWizard main pipeline.
 
     - img_color: RGB PIL image
     - enable_border:
         None  -> use global ADD_BORDER setting
         True  -> force border ON for this call
         False -> force border OFF for this call
-    - keep_black_lines:
-        False -> original behaviour (no add-on)
-        True  -> apply non-destructive Keep Black Lines at the end
     """
     img_color = img_color.convert("RGB")
 
-    # 1) Core edge detection
+    # 1) Kanten berechnen
     edge_img = compute_edge_map(img_color)
 
-    # 2) Line normalization / equalizer / ultra-uniformizer
+    # 2) Linien glätten / normalisieren
     if LINE_SOFT_NORMALIZE:
         edge_img = soft_normalize_lines(edge_img)
 
-    # 3) Red/green borders (flags)
+    # 3) Rot-/Grün-Übergänge verstärken
     edge_img = add_soft_red_green_lines(edge_img, img_color)
 
-    # 4) Optional outer border
+    # 4) Rahmen optional hinzufügen
     use_border = ADD_BORDER if enable_border is None else bool(enable_border)
     if use_border:
         edge_img = add_border(edge_img, BORDER_WIDTH_PX)
 
-    # 5) Optional Keep Black Lines add-on (non-destructive)
-    edge_img = apply_keep_black_lines(edge_img, img_color, enabled=keep_black_lines)
+    return edge_img
+
+
+
+
+def run_edge_pipeline(img_color: Image.Image, enable_border=None) -> Image.Image:
+    """
+    EdgeWizard main pipeline.
+
+    - img_color: RGB PIL image
+    - enable_border:
+        None  -> use global ADD_BORDER setting
+        True  -> force border ON for this call
+        False -> force border OFF for this call
+    """
+    img_color = img_color.convert("RGB")
+
+    edge_img = compute_edge_map(img_color)
+
+    if LINE_SOFT_NORMALIZE:
+        edge_img = soft_normalize_lines(edge_img)
+
+    edge_img = add_soft_red_green_lines(edge_img, img_color)
+
+    # Decide whether to draw the border
+    use_border = ADD_BORDER if enable_border is None else bool(enable_border)
+    if use_border:
+        edge_img = add_border(edge_img, BORDER_WIDTH_PX)
 
     return edge_img
