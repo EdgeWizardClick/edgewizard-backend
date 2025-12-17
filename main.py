@@ -351,15 +351,20 @@ async def public_metrics():
     snap = get_public_metrics_snapshot()
     return JSONResponse(snap)
 
+@app.get("/public/metrics/live")
+async def public_metrics_live():
+    """
+    Live totals (no daily snapshot) - for verification.
+    """
+    from metrics import _read_totals
+    totals = _read_totals()
+    return JSONResponse({**totals, "refresh_policy": "live"})
+
 # Local testing: uvicorn main:app --reload
 if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run("main:app", host="0.0.0.0", port=8000)
-
-
-
-
 
 
 
