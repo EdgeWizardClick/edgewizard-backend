@@ -13,6 +13,12 @@ from credits_manager import (
     add_paid_credits,
 )
 
+from metrics import (
+    incr_credits_spent,
+    incr_images_created,
+    get_public_metrics_snapshot,
+)
+
 import io
 import os
 import base64
@@ -59,11 +65,11 @@ async def process_edge(
     outline: bool = Form(False),
     keep_black_lines: bool = Form(False),
     line_style: str = Form("thin"),
-    current_user = Depends(get_current_user),
+    current_user=Depends(get_current_user),
 ):
     """
     Main edge-processing endpoint.
-    Consumes one credit per image (paid first, then free).
+    Consumes credits per image (paid first, then free).
     Returns an outline as Base64 data URL.
     Credits sind jetzt an user_id (Account) gebunden.
     """
@@ -74,8 +80,8 @@ async def process_edge(
         try:
             needed_credits = 1 + (1 if outline else 0) + (1 if keep_black_lines else 0)
             consume_credit_or_fail(user_id, amount=needed_credits)
+            incr_credits_spent(needed_credits)
         except NoCreditsError:
-            # No credits available
             raise HTTPException(
                 status_code=402,
                 detail={
@@ -91,19 +97,16 @@ async def process_edge(
         pil_image = Image.open(io.BytesIO(file_bytes))
         pil_image = ImageOps.exif_transpose(pil_image)
 
-        # --- PNG/JPG/… normalisieren wie im Original-Script ---
-        # Ziel: immer ein sauberes RGB-Bild ohne transparente/Palette-Artefakte
+        # Normalize input to clean RGB
         if pil_image.mode in ("RGBA", "LA", "P"):
-            # Zuerst nach RGBA konvertieren, dann auf weissen Hintergrund legen
             pil_image = pil_image.convert("RGBA")
             background = Image.new("RGBA", pil_image.size, (255, 255, 255, 255))
             background.paste(pil_image, mask=pil_image.getchannel("A"))
             pil_image = background.convert("RGB")
         else:
             pil_image = pil_image.convert("RGB")
-        # -------------------------------------------------------
 
-        # Always output PNG for maximum stability and consistency
+        # Always output PNG
         output_format = "PNG"
         output_mime = "image/png"
         output_ext = "png"
@@ -112,12 +115,14 @@ async def process_edge(
         pil_image = apply_line_style(pil_image, line_style)
 
         # Run the high-quality edge pipeline
-        result_image = run_edge_pipeline(pil_image, enable_border=outline, keep_black_lines=keep_black_lines)
+        result_image = run_edge_pipeline(
+            pil_image,
+            enable_border=outline,
+            keep_black_lines=keep_black_lines,
+        )
 
-        # Encode result as Base64 data URL in the chosen format
+        # Encode result as Base64 data URL
         buffer = io.BytesIO()
-
-        # For JPEG ensure compatible mode (falls wir spaeter JPEG nutzen wollten)
         save_img = result_image
         if output_format == "JPEG" and result_image.mode not in ("L", "RGB"):
             save_img = result_image.convert("L")
@@ -130,6 +135,9 @@ async def process_edge(
         # Small artificial delay (as before)
         time.sleep(0.1)
 
+        # Metrics: successful image creation
+        incr_images_created(1)
+
         return JSONResponse(
             {
                 "result_data_url": data_url,
@@ -139,107 +147,9 @@ async def process_edge(
         )
 
     except HTTPException:
-        # Re-raise explicit HTTP errors
         raise
     except Exception as e:
-        # Generic error for frontend
         raise HTTPException(status_code=500, detail=f"Processing failed: {e}")
-
-
-@app.get("/me/credits")
-async def me_credits(
-    current_user=Depends(get_current_user),
-):
-    """
-    Returns the current credit status for the logged-in user:
-    paid_credits, free_credits, total_credits.
-    Credits sind jetzt user_id-basiert.
-    """
-    try:
-        status = get_credit_status(current_user.user_id)
-        return JSONResponse(status)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Could not get credit status: {e}")
-
-
-@app.get("/me/credits/status")
-async def me_credits_status(
-    current_user=Depends(get_current_user),
-):
-    """
-    Returns detailed credit status for the logged-in user, including timing
-    information for the next possible free-credit refill.
-
-    This endpoint does NOT change the underlying credit logic. It only reads:
-      - paid_credits
-      - free_credits
-      - total_credits
-      - next_free_refill_at (ISO) or None if paid credits exist
-      - server_now (ISO, Europe/Zurich if available)
-    """
-    try:
-        status = get_credit_status_with_reset_info(current_user.user_id)
-        return JSONResponse(status)
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Could not get detailed credit status: {e}",
-        )
-
-
-class GrantCreditsRequest(BaseModel):
-    user_id: str
-    credits: int
-
-
-@app.post("/admin/grant-credits")
-async def admin_grant_credits(
-    payload: GrantCreditsRequest,
-    request: Request,
-):
-    """
-    Admin-only endpoint to grant paid credits to a user.
-
-    Security:
-      - Requires the HTTP header "x-admin-key" to match ADMIN_API_KEY from the environment.
-      - Should only be used by the owner of EdgeWizard for support / manual corrections.
-    """
-    if not ADMIN_API_KEY:
-        raise HTTPException(
-            status_code=500,
-            detail="ADMIN_API_KEY is not configured on the server.",
-        )
-
-    api_key = request.headers.get("x-admin-key")
-    if api_key != ADMIN_API_KEY:
-        raise HTTPException(
-            status_code=403,
-            detail="Forbidden: invalid admin key.",
-        )
-
-    if payload.credits <= 0:
-        raise HTTPException(
-            status_code=400,
-            detail="credits must be a positive integer.",
-        )
-
-    try:
-        add_paid_credits(payload.user_id, payload.credits)
-        # Return the updated status for convenience
-        status = get_credit_status(payload.user_id)
-        return JSONResponse(
-            {
-                "message": "Credits granted successfully.",
-                "user_id": payload.user_id,
-                "granted_credits": payload.credits,
-                "updated_status": status,
-            }
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Could not grant credits: {e}",
-        )
 
 
 class GrantCreditsByEmailRequest(BaseModel):
@@ -331,6 +241,21 @@ async def admin_reset_password_route(
         return {"message": "Password reset successful", "user_id": uid}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/public/metrics")
+async def public_metrics():
+    """
+    Public daily snapshot for landing page counters.
+    Refreshes once per day (same logic as daily free credits).
+    """
+    try:
+        snap = get_public_metrics_snapshot()
+        return JSONResponse(snap)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Could not load metrics: {e}",
+        )
 
 
 # Local testing: uvicorn main:app --reload
