@@ -13,6 +13,12 @@ from credits_manager import (
     add_paid_credits,
 )
 
+from metrics import (
+    incr_credits_spent,
+    incr_images_created,
+    get_public_metrics_snapshot,
+)
+
 import io
 import os
 import base64
@@ -74,6 +80,7 @@ async def process_edge(
         try:
             needed_credits = 1 + (1 if outline else 0) + (1 if keep_black_lines else 0)
             consume_credit_or_fail(user_id, amount=needed_credits)
+            incr_credits_spent(needed_credits)
         except NoCreditsError:
             # No credits available
             raise HTTPException(
@@ -129,6 +136,8 @@ async def process_edge(
 
         # Small artificial delay (as before)
         time.sleep(0.1)
+
+        incr_images_created(1)
 
         return JSONResponse(
             {
@@ -333,11 +342,21 @@ async def admin_reset_password_route(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@app.get("/public/metrics")
+async def public_metrics():
+    """
+    Public daily snapshot for landing page counters.
+    Refreshes once per day (same logic as daily free credits).
+    """
+    snap = get_public_metrics_snapshot()
+    return JSONResponse(snap)
+
 # Local testing: uvicorn main:app --reload
 if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run("main:app", host="0.0.0.0", port=8000)
+
 
 
 
